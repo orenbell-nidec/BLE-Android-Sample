@@ -86,7 +86,7 @@ public class BluetoothLeService extends Service {
                 hexStr[i * 2 + 1] = HEX_ARRAY[v & 0x0F];
             }
 
-            Log.println(0, "BLE", hexStr.toString());
+            Log.println(Log.INFO, "BLE", hexStr.toString());
         }
 
         @Override
@@ -164,16 +164,18 @@ public class BluetoothLeService extends Service {
         return new UUID(MSB | (value << 32), LSB);
     }
 
-    public void initialize() {
+    public boolean initialize() {
         mHandler = new Handler();
         if (bluetoothManager == null) {
             bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
             bluetoothAdapter = bluetoothManager.getAdapter();
         }
 
-        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
+        if (bluetoothAdapter != null || !bluetoothAdapter.isEnabled()) {
             throw new RuntimeException("Unable to declare a bluetooth adapter");
         }
+
+        return true;
     }
 
     public void connect() {
@@ -199,6 +201,10 @@ public class BluetoothLeService extends Service {
         } else {
             leScanner.stopScan(scanCallback);
         }
+    }
+
+    public void stopScan() {
+        leScanner.stopScan(scanCallback);
     }
 
     private void tryConnectToDevice(BluetoothDevice device) {
