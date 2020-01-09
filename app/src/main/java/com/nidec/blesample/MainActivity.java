@@ -35,20 +35,22 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        bindService(new Intent(this, BluetoothLeService.class), mServiceConnection, BIND_AUTO_CREATE);
     }
 
     @Override
-    protected void onResume() {
-        super.onResume();
+    protected void onStart() {
+        super.onStart();
 
-        mBluetoothLeService.connect();
+        // NOTE: Bind service in each activity's onStart
+        Intent intent = new Intent(this, BluetoothLeService.class);
+        bindService(intent, mServiceConnection, Context.BIND_AUTO_CREATE);
     }
 
     @Override
     protected void onStop() {
         super.onStop();
+
+        // NOTE: Stop and unbind the BLE service when activity stops
         mBluetoothLeService.stopScan();
         this.unbindService(mServiceConnection);
     }
@@ -56,6 +58,8 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
+        // NOTE: Stop and unbind the BLE service when activity stops
         mBluetoothLeService.stopScan();
         this.unbindService(mServiceConnection);
     }
@@ -63,12 +67,15 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
+
+        // NOTE: Stop and unbind the BLE service when activity stops???
         mBluetoothLeService.stopScan();
         this.unbindService(mServiceConnection);
     }
 
     public void connectBT(View view) {
-        mBluetoothLeService.scanLeDevice(true);
+        // NOTE: Perform a scan and connect to the device when needed
+        mBluetoothLeService.connect();
     }
 
     public void sendData(View view) {
@@ -86,16 +93,11 @@ public class MainActivity extends AppCompatActivity {
             } catch (RuntimeException err) {
                 Toast.makeText(MainActivity.this, "Unable to initialize Bluetooth", Toast.LENGTH_SHORT).show();
             }
-            // Automatically connects to the device upon successful start-up initialization.
-            //mBluetoothLeService.connect(mDeviceAddress);					//Service connects to the device selected and passed to us by the DeviceScanActivity
-            //Logd(TAG, "onServiceConnected End");
         }
 
         @Override
         public void onServiceDisconnected(ComponentName componentName) {			//Service disconnects
-            //Logd(TAG, "onServiceDisconnected Start");
             mBluetoothLeService = null;								//Service has no connection
-            //Logd(TAG, "onServiceDisconnected End");
         }
     };
 }

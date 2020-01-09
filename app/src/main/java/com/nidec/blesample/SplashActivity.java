@@ -22,8 +22,8 @@ public class SplashActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_splash);
 
-        // ==============DO THIS ON THE SPLASH SCREEN, AFTER ANIMATIONS=======================
 
+        // ==============DO THIS ON THE SPLASH SCREEN, AFTER ANIMATIONS=======================
         mHandler = new Handler();
 
         // If using SDK >=23, do a runtime request for coarse location
@@ -45,6 +45,7 @@ public class SplashActivity extends AppCompatActivity {
             Intent intent = new Intent(getApplicationContext(), MainActivity.class);
             startActivity(intent);
         }
+        // ==============DO THIS ON THE SPLASH SCREEN, AFTER ANIMATIONS=======================
 
     }
 

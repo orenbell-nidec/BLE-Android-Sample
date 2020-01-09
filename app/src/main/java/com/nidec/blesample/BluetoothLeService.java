@@ -7,6 +7,8 @@ import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
+import android.bluetooth.BluetoothGattServer;
+import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
@@ -135,16 +137,13 @@ public class BluetoothLeService extends Service {
             return BluetoothLeService.this;
         }
     }
-    // ----------------------------------------------------------------------------------------------------------------
-    //
+
     @Override
     public IBinder onBind(Intent intent) {
         Log.d(TAG, "onBind Start & End");
         return mBinder;
     }
 
-    // ----------------------------------------------------------------------------------------------------------------
-    //
     @Override
     public boolean onUnbind(Intent intent) {
         Log.d(TAG, "onUnbind Start & End");
@@ -171,7 +170,7 @@ public class BluetoothLeService extends Service {
             bluetoothAdapter = bluetoothManager.getAdapter();
         }
 
-        if (bluetoothAdapter != null || !bluetoothAdapter.isEnabled()) {
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
             throw new RuntimeException("Unable to declare a bluetooth adapter");
         }
 
@@ -183,6 +182,9 @@ public class BluetoothLeService extends Service {
             leScanner = bluetoothAdapter.getBluetoothLeScanner();
             settings = new ScanSettings.Builder()
                     .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+//                    .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
+//                    .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
+                    .setReportDelay(0)
                     .build();
 
             scanLeDevice(true);
@@ -208,14 +210,15 @@ public class BluetoothLeService extends Service {
     }
 
     private void tryConnectToDevice(BluetoothDevice device) {
-        if (gatt == null && device.getName() == "SelecTech") {
+        if (gatt == null && device.getName() != null && device.getName().contains("SelecTech")) {
             gatt = device.connectGatt(this, true, gattCallback);
             scanLeDevice(false);
         }
     }
 
     public void sendData(byte[] data) {
-        BluetoothGattCharacteristic characteristic = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_DATA_PRIVATE_CHAR);
+        BluetoothGattService service = gatt.getService(MLDP_PRIVATE_SERVICE);
+        BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_DATA_PRIVATE_CHAR);
         List<BluetoothGattDescriptor> descriptors = characteristic.getDescriptors();
         descriptors.get(0).setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
 
