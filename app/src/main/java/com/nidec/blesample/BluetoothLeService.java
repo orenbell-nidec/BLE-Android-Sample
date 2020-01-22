@@ -10,6 +10,7 @@ import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattServer;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanFilter;
@@ -18,6 +19,7 @@ import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.util.Log;
@@ -47,8 +49,21 @@ public class BluetoothLeService extends Service {
     private BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-            if (newState == BluetoothGatt.STATE_CONNECTED) {
+            super.onConnectionStateChange(gatt, status, newState);
+
+            if (status == BluetoothGatt.GATT_FAILURE) {
+                Log.i(TAG, "onConnectionStateChange GATT FAILURE");
+                return;
+            } else if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.i(TAG, "onConnectionStateChange != GATT_SUCCESS");
+                return;
+            }
+
+            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                Log.i(TAG, "onConnectionStateChange CONNECTED");
                 gatt.discoverServices();
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                Log.i(TAG, "onConnectionStateChange DISCONNECTED");
             }
 
             // TODO: More error handling here
@@ -56,10 +71,18 @@ public class BluetoothLeService extends Service {
 
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+            super.onServicesDiscovered(gatt, status);
+
+            // If unsuccessful, ignore this
+            if (status != BluetoothGatt.GATT_SUCCESS) return;
+
+            // Set up all UUIDs
             BluetoothGattCharacteristic characteristic = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_DATA_PRIVATE_CHAR);
+            gatt.setCharacteristicNotification(characteristic, true);
+
+            // TODO: This returns null
             BluetoothGattDescriptor descriptor = characteristic.getDescriptor(MLDP_CHAR_CONFIG);
             descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-
             gatt.writeDescriptor(descriptor);
         }
 
@@ -79,16 +102,14 @@ public class BluetoothLeService extends Service {
 
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-            final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
-            byte[] bytes = characteristic.getValue();
-            char[] hexStr = new char[bytes.length * 2];
-            for (int i = 0; i < bytes.length; i++) {
-                int v = bytes[i] & 0xFF;
-                hexStr[i * 2] = HEX_ARRAY[v >>> 4];
-                hexStr[i * 2 + 1] = HEX_ARRAY[v & 0x0F];
-            }
+            super.onCharacteristicChanged(gatt, characteristic);
 
-            Log.println(Log.INFO, "BLE", hexStr.toString());
+            Log.d(TAG, "Value is: " + bytesToHexString(characteristic.getValue()));
+        }
+
+        @Override
+        public void onDescriptorRead(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
+            super.onDescriptorRead(gatt, descriptor, status);
         }
 
         @Override
@@ -177,6 +198,18 @@ public class BluetoothLeService extends Service {
         return true;
     }
 
+    private char[] bytesToHexString(byte[] bytes) {
+        final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
+        char[] hexStr = new char[bytes.length * 2];
+        for (int i = 0; i < bytes.length; i++) {
+            int v = bytes[i] & 0xFF;
+            hexStr[i * 2] = HEX_ARRAY[v >>> 4];
+            hexStr[i * 2 + 1] = HEX_ARRAY[v & 0x0F];
+        }
+
+        return hexStr;
+    }
+
     public void connect() {
         if (bluetoothAdapter != null && bluetoothAdapter.isEnabled()) {
             leScanner = bluetoothAdapter.getBluetoothLeScanner();
@@ -211,18 +244,40 @@ public class BluetoothLeService extends Service {
 
     private void tryConnectToDevice(BluetoothDevice device) {
         if (gatt == null && device.getName() != null && device.getName().contains("SelecTech")) {
-            gatt = device.connectGatt(this, true, gattCallback);
             scanLeDevice(false);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                gatt = device.connectGatt(this,true, gattCallback, BluetoothDevice.TRANSPORT_LE);
+            } else {
+                // TODO: This will not connect to
+                gatt = device.connectGatt(this, false, gattCallback);
+            }
+
         }
     }
 
     public void sendData(byte[] data) {
+        try {
+            BluetoothGattService service = gatt.getService(MLDP_PRIVATE_SERVICE);
+            BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_DATA_PRIVATE_CHAR);
+            List<BluetoothGattDescriptor> descriptors = characteristic.getDescriptors();
+            descriptors.get(0).setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+            gatt.writeDescriptor(descriptors.get(0));
+        } catch (Exception err) {
+            Log.e(TAG, err.getStackTrace().toString());
+        }
+
+    }
+
+    public byte[] readData() {
+        if (bluetoothAdapter == null || gatt == null) {
+            Log.w(TAG, "BluetoothAdapter not initialized");
+            return null;
+        }
+
         BluetoothGattService service = gatt.getService(MLDP_PRIVATE_SERVICE);
         BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_DATA_PRIVATE_CHAR);
-        List<BluetoothGattDescriptor> descriptors = characteristic.getDescriptors();
-        descriptors.get(0).setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-
-        gatt.writeDescriptor(descriptors.get(0));
+        return characteristic.getValue();
     }
 
     /**
