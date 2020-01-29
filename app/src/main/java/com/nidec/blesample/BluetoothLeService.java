@@ -34,7 +34,7 @@ public class BluetoothLeService extends Service {
     public static UUID MLDP_PRIVATE_SERVICE = UUID.fromString("49535343-fe7d-4ae5-8fa9-9fafd205e455");
     public static UUID MLDP_DATA_PRIVATE_CHAR = UUID.fromString("49535343-8841-43f4-a8d4-ecbe34729bb3");
     public static UUID MLDP_CONTROL_PRIVATE_CHAR = UUID.fromString("49535343-1e4d-4bd9-ba61-23c647249616");
-    public static UUID MLDP_CHAR_CONFIG = convertFromInteger(0x2902);
+    public static UUID MLDP_CHAR_CONFIG = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
 
     private BluetoothManager bluetoothManager;
     private BluetoothAdapter bluetoothAdapter;
@@ -77,13 +77,11 @@ public class BluetoothLeService extends Service {
             if (status != BluetoothGatt.GATT_SUCCESS) return;
 
             // Set up all UUIDs
-            BluetoothGattCharacteristic characteristic = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_DATA_PRIVATE_CHAR);
-            gatt.setCharacteristicNotification(characteristic, true);
+            BluetoothGattCharacteristic characteristic_data = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_DATA_PRIVATE_CHAR);
+            gatt.setCharacteristicNotification(characteristic_data, true);
 
-            // TODO: This returns null
-            BluetoothGattDescriptor descriptor = characteristic.getDescriptor(MLDP_CHAR_CONFIG);
-            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-            gatt.writeDescriptor(descriptor);
+            BluetoothGattCharacteristic characteristic_control = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_CONTROL_PRIVATE_CHAR);
+            gatt.setCharacteristicNotification(characteristic_control, true);
         }
 
         @Override
@@ -198,13 +196,14 @@ public class BluetoothLeService extends Service {
         return true;
     }
 
-    private char[] bytesToHexString(byte[] bytes) {
+    public static char[] bytesToHexString(byte[] bytes) {
         final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
-        char[] hexStr = new char[bytes.length * 2];
+        char[] hexStr = new char[bytes.length * 3];
         for (int i = 0; i < bytes.length; i++) {
             int v = bytes[i] & 0xFF;
-            hexStr[i * 2] = HEX_ARRAY[v >>> 4];
-            hexStr[i * 2 + 1] = HEX_ARRAY[v & 0x0F];
+            hexStr[i * 3] = HEX_ARRAY[v >>> 4];
+            hexStr[i * 3 + 1] = HEX_ARRAY[v & 0x0F];
+            hexStr[i * 3 + 2] = ' ';
         }
 
         return hexStr;
@@ -249,7 +248,7 @@ public class BluetoothLeService extends Service {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 gatt = device.connectGatt(this,true, gattCallback, BluetoothDevice.TRANSPORT_LE);
             } else {
-                // TODO: This will not connect to
+                // TODO: This will not connect
                 gatt = device.connectGatt(this, false, gattCallback);
             }
 
@@ -259,10 +258,9 @@ public class BluetoothLeService extends Service {
     public void sendData(byte[] data) {
         try {
             BluetoothGattService service = gatt.getService(MLDP_PRIVATE_SERVICE);
-            BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_DATA_PRIVATE_CHAR);
-            List<BluetoothGattDescriptor> descriptors = characteristic.getDescriptors();
-            descriptors.get(0).setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-            gatt.writeDescriptor(descriptors.get(0));
+            BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_CONTROL_PRIVATE_CHAR);
+            characteristic.setValue(data);
+            gatt.writeCharacteristic(characteristic);
         } catch (Exception err) {
             Log.e(TAG, err.getStackTrace().toString());
         }
@@ -276,7 +274,9 @@ public class BluetoothLeService extends Service {
         }
 
         BluetoothGattService service = gatt.getService(MLDP_PRIVATE_SERVICE);
-        BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_DATA_PRIVATE_CHAR);
+        BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_CONTROL_PRIVATE_CHAR);
+        gatt.readCharacteristic(characteristic);
+
         return characteristic.getValue();
     }
 
