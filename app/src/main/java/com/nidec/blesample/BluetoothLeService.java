@@ -7,7 +7,6 @@ import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
-import android.bluetooth.BluetoothGattServer;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
@@ -22,6 +21,7 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.util.Log;
 
 import java.util.List;
@@ -30,14 +30,16 @@ import java.util.UUID;
 public class BluetoothLeService extends Service {
 
     private final static String TAG = BluetoothLeService.class.getSimpleName();
-    private final static int REQUEST_ENABLE_BT = 1;
+    public final static int REQUEST_ENABLE_BT = 1;
     public static UUID MLDP_PRIVATE_SERVICE = UUID.fromString("49535343-fe7d-4ae5-8fa9-9fafd205e455");
-    public static UUID MLDP_DATA_PRIVATE_CHAR = UUID.fromString("49535343-8841-43f4-a8d4-ecbe34729bb3");
-    public static UUID MLDP_CONTROL_PRIVATE_CHAR = UUID.fromString("49535343-1e4d-4bd9-ba61-23c647249616");
+    public static UUID MLDP_WRITE_CHAR = UUID.fromString("49535343-8841-43f4-a8d4-ecbe34729bb3");
+    public static UUID MLDP_READ_CHAR = UUID.fromString("49535343-1e4d-4bd9-ba61-23c647249616");
     public static UUID MLDP_CHAR_CONFIG = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
+    public int connectionState;
 
     private BluetoothManager bluetoothManager;
     private BluetoothAdapter bluetoothAdapter;
+    private BluetoothDevice bluetoothDevice;
     private Handler mHandler;
     public BluetoothDevice motor;
     private BluetoothGatt gatt;
@@ -46,6 +48,8 @@ public class BluetoothLeService extends Service {
     private List<ScanFilter> filters;
     public final long SCAN_PERIOD = 10000;
     private final int PERMISSION_REQUEST_COARSE_LOCATION = 1;
+    private boolean mScanning = false;
+
     private BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
@@ -61,9 +65,14 @@ public class BluetoothLeService extends Service {
 
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 Log.i(TAG, "onConnectionStateChange CONNECTED");
+                connectionState = BluetoothProfile.STATE_CONNECTED;
                 gatt.discoverServices();
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 Log.i(TAG, "onConnectionStateChange DISCONNECTED");
+                connectionState = BluetoothProfile.STATE_DISCONNECTED;
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTING) {
+                Log.i(TAG, "onConnectionStateChange DISCONNECTING");
+                connectionState = BluetoothProfile.STATE_DISCONNECTING;
             }
 
             // TODO: More error handling here
@@ -77,10 +86,10 @@ public class BluetoothLeService extends Service {
             if (status != BluetoothGatt.GATT_SUCCESS) return;
 
             // Set up all UUIDs
-            BluetoothGattCharacteristic characteristic_data = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_DATA_PRIVATE_CHAR);
+            BluetoothGattCharacteristic characteristic_data = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_WRITE_CHAR);
             gatt.setCharacteristicNotification(characteristic_data, true);
 
-            BluetoothGattCharacteristic characteristic_control = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_CONTROL_PRIVATE_CHAR);
+            BluetoothGattCharacteristic characteristic_control = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_READ_CHAR);
             gatt.setCharacteristicNotification(characteristic_control, true);
         }
 
@@ -112,7 +121,7 @@ public class BluetoothLeService extends Service {
 
         @Override
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
-            BluetoothGattCharacteristic characteristic = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_DATA_PRIVATE_CHAR);
+            BluetoothGattCharacteristic characteristic = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_WRITE_CHAR);
 
             characteristic.setValue(new byte[] {1, 1});
             gatt.writeCharacteristic(characteristic);
@@ -131,8 +140,12 @@ public class BluetoothLeService extends Service {
             Log.i("result", result.toString());
             BluetoothDevice btDevice = result.getDevice();
 
-            // Connect to device, if it's what we want
-            tryConnectToDevice(btDevice);
+            // Connect to device, and remember it for later
+            if (btDevice.getName() != null && btDevice.getName().contains("SelecTech")) {
+                scanLeDevice(false);
+                bluetoothDevice = btDevice;
+                connect();  // TODO: See if this can be done at a different time
+            }
         }
 
         @Override
@@ -149,6 +162,40 @@ public class BluetoothLeService extends Service {
     };
 
     private final IBinder mBinder = new LocalBinder();
+
+    public boolean connect() {
+        if (bluetoothAdapter == null || bluetoothDevice == null) {
+            Log.w(TAG, "Bluetooth adapter not initialized or scan failed");
+            return false;
+        }
+
+        // Update the state
+        gattCallback.onConnectionStateChange(gatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTING);
+
+        // If we've already initialized gatt, just reconnect
+        if (gatt != null) {
+            // Connect the device
+            bluetoothDevice.connectGatt(BluetoothLeService.this, false, gattCallback);
+
+            // Connect gatt
+            if (gatt.connect()) {
+                connectionState = BluetoothProfile.STATE_CONNECTING;
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            gatt = bluetoothDevice.connectGatt(this,true, gattCallback, BluetoothDevice.TRANSPORT_LE);
+        } else {
+            // TODO: This will not startScan
+            gatt = bluetoothDevice.connectGatt(this, false, gattCallback);
+        }
+
+        connectionState = BluetoothProfile.STATE_CONNECTING;
+        return true;
+    }
 
     public class LocalBinder extends Binder {
         BluetoothLeService getService() {
@@ -190,7 +237,8 @@ public class BluetoothLeService extends Service {
         }
 
         if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
-            throw new RuntimeException("Unable to declare a bluetooth adapter");
+            Log.e(TAG, "Unable to declare a bluetooth adapter");
+            return false;
         }
 
         return true;
@@ -209,7 +257,8 @@ public class BluetoothLeService extends Service {
         return hexStr;
     }
 
-    public void connect() {
+    public boolean startScan() {
+        // TODO: Request user enable BT (REQUEST_ENABLE_BT intent) if bt is disabled
         if (bluetoothAdapter != null && bluetoothAdapter.isEnabled()) {
             leScanner = bluetoothAdapter.getBluetoothLeScanner();
             settings = new ScanSettings.Builder()
@@ -220,7 +269,8 @@ public class BluetoothLeService extends Service {
                     .build();
 
             scanLeDevice(true);
-        }
+            return true;
+        } else return false;
     }
 
     public void scanLeDevice(final boolean enable) {
@@ -228,12 +278,19 @@ public class BluetoothLeService extends Service {
             mHandler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
-                    leScanner.stopScan(scanCallback);
+                    mScanning = false;
+                    if (bluetoothAdapter.isEnabled()) {
+                        leScanner.stopScan(scanCallback);
+                    }
                 }
             }, SCAN_PERIOD);
+            mScanning = true;
             leScanner.startScan(filters, settings, scanCallback);
         } else {
-            leScanner.stopScan(scanCallback);
+            mScanning = false;
+            if (bluetoothAdapter.isEnabled()) {
+                leScanner.stopScan(scanCallback);
+            }
         }
     }
 
@@ -241,24 +298,18 @@ public class BluetoothLeService extends Service {
         leScanner.stopScan(scanCallback);
     }
 
-    private void tryConnectToDevice(BluetoothDevice device) {
-        if (gatt == null && device.getName() != null && device.getName().contains("SelecTech")) {
-            scanLeDevice(false);
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                gatt = device.connectGatt(this,true, gattCallback, BluetoothDevice.TRANSPORT_LE);
-            } else {
-                // TODO: This will not connect
-                gatt = device.connectGatt(this, false, gattCallback);
-            }
-
+    public String getDeviceAddress() {
+        if (bluetoothDevice == null) {
+            return null;
+        } else {
+            return bluetoothDevice.getAddress();
         }
     }
 
     public void sendData(byte[] data) {
         try {
             BluetoothGattService service = gatt.getService(MLDP_PRIVATE_SERVICE);
-            BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_CONTROL_PRIVATE_CHAR);
+            BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_READ_CHAR);
             characteristic.setValue(data);
             gatt.writeCharacteristic(characteristic);
         } catch (Exception err) {
@@ -274,7 +325,7 @@ public class BluetoothLeService extends Service {
         }
 
         BluetoothGattService service = gatt.getService(MLDP_PRIVATE_SERVICE);
-        BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_CONTROL_PRIVATE_CHAR);
+        BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_READ_CHAR);
         gatt.readCharacteristic(characteristic);
 
         return characteristic.getValue();
