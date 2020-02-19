@@ -50,6 +50,53 @@ public class BluetoothLeService extends Service {
     private final int PERMISSION_REQUEST_COARSE_LOCATION = 1;
     private boolean mScanning = false;
 
+    private final IBinder mBinder = new LocalBinder();
+
+    public class LocalBinder extends Binder {
+        BluetoothLeService getService() {
+            Log.d(TAG, "LocalBinder.getService Start & End");
+            return BluetoothLeService.this;
+        }
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        Log.d(TAG, "onBind Start & End");
+        return mBinder;
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        Log.d(TAG, "onUnbind Start & End");
+        // After using a given device, you should make sure that
+        // BluetoothGatt.close() is called
+        // such that resources are cleaned up properly. In this particular
+        // example, close() is
+        // invoked when the UI is disconnected from the Service.
+        close();
+        return super.onUnbind(intent);
+    }
+
+    public static UUID convertFromInteger(int i) {
+        final long MSB = 0x0000000000001000L;
+        final long LSB = 0x800000805f9b34fbL;
+        long value = i & 0xFFFFFFFF;
+        return new UUID(MSB | (value << 32), LSB);
+    }
+
+    public static char[] bytesToHexString(byte[] bytes) {
+        final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
+        char[] hexStr = new char[bytes.length * 3];
+        for (int i = 0; i < bytes.length; i++) {
+            int v = bytes[i] & 0xFF;
+            hexStr[i * 3] = HEX_ARRAY[v >>> 4];
+            hexStr[i * 3 + 1] = HEX_ARRAY[v & 0x0F];
+            hexStr[i * 3 + 2] = ' ';
+        }
+
+        return hexStr;
+    }
+
     private BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
@@ -161,74 +208,6 @@ public class BluetoothLeService extends Service {
         }
     };
 
-    private final IBinder mBinder = new LocalBinder();
-
-    public boolean connect() {
-        if (bluetoothAdapter == null || bluetoothDevice == null) {
-            Log.w(TAG, "Bluetooth adapter not initialized or scan failed");
-            return false;
-        }
-
-        // Update the state
-        gattCallback.onConnectionStateChange(gatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTING);
-
-        // If we've already initialized gatt, just reconnect
-        if (gatt != null) {
-            // Connect the device
-            bluetoothDevice.connectGatt(BluetoothLeService.this, false, gattCallback);
-
-            // Connect gatt
-            if (gatt.connect()) {
-                connectionState = BluetoothProfile.STATE_CONNECTING;
-                return true;
-            } else {
-                return false;
-            }
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            gatt = bluetoothDevice.connectGatt(this,true, gattCallback, BluetoothDevice.TRANSPORT_LE);
-        } else {
-            // TODO: This will not startScan
-            gatt = bluetoothDevice.connectGatt(this, false, gattCallback);
-        }
-
-        connectionState = BluetoothProfile.STATE_CONNECTING;
-        return true;
-    }
-
-    public class LocalBinder extends Binder {
-        BluetoothLeService getService() {
-            Log.d(TAG, "LocalBinder.getService Start & End");
-            return BluetoothLeService.this;
-        }
-    }
-
-    @Override
-    public IBinder onBind(Intent intent) {
-        Log.d(TAG, "onBind Start & End");
-        return mBinder;
-    }
-
-    @Override
-    public boolean onUnbind(Intent intent) {
-        Log.d(TAG, "onUnbind Start & End");
-        // After using a given device, you should make sure that
-        // BluetoothGatt.close() is called
-        // such that resources are cleaned up properly. In this particular
-        // example, close() is
-        // invoked when the UI is disconnected from the Service.
-        close();
-        return super.onUnbind(intent);
-    }
-
-    public static UUID convertFromInteger(int i) {
-        final long MSB = 0x0000000000001000L;
-        final long LSB = 0x800000805f9b34fbL;
-        long value = i & 0xFFFFFFFF;
-        return new UUID(MSB | (value << 32), LSB);
-    }
-
     public boolean initialize() {
         mHandler = new Handler();
         if (bluetoothManager == null) {
@@ -244,19 +223,6 @@ public class BluetoothLeService extends Service {
         return true;
     }
 
-    public static char[] bytesToHexString(byte[] bytes) {
-        final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
-        char[] hexStr = new char[bytes.length * 3];
-        for (int i = 0; i < bytes.length; i++) {
-            int v = bytes[i] & 0xFF;
-            hexStr[i * 3] = HEX_ARRAY[v >>> 4];
-            hexStr[i * 3 + 1] = HEX_ARRAY[v & 0x0F];
-            hexStr[i * 3 + 2] = ' ';
-        }
-
-        return hexStr;
-    }
-
     public boolean startScan() {
         // TODO: Request user enable BT (REQUEST_ENABLE_BT intent) if bt is disabled
         if (bluetoothAdapter != null && bluetoothAdapter.isEnabled()) {
@@ -264,7 +230,7 @@ public class BluetoothLeService extends Service {
             settings = new ScanSettings.Builder()
                     .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
 //                    .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
-//                    .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
+                    .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
                     .setReportDelay(0)
                     .build();
 
@@ -295,7 +261,39 @@ public class BluetoothLeService extends Service {
     }
 
     public void stopScan() {
-        leScanner.stopScan(scanCallback);
+        mScanning = false;
+        if (bluetoothAdapter.isEnabled()) {
+            leScanner.stopScan(scanCallback);
+        }
+    }
+
+    public boolean connect() {
+        if (bluetoothAdapter == null || bluetoothDevice == null) {
+            Log.w(TAG, "Bluetooth adapter not initialized or scan failed");
+            return false;
+        }
+
+        // Update the state
+        gattCallback.onConnectionStateChange(gatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTING);
+
+        // If we've already initialized gatt, just reconnect
+        if (gatt != null) {
+            // Connect the device
+            bluetoothDevice.connectGatt(BluetoothLeService.this, false, gattCallback);
+
+            // Connect gatt
+            if (gatt.connect()) {
+                connectionState = BluetoothProfile.STATE_CONNECTING;
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        gatt = bluetoothDevice.connectGatt(this,true, gattCallback, BluetoothDevice.TRANSPORT_LE);
+
+        connectionState = BluetoothProfile.STATE_CONNECTING;
+        return true;
     }
 
     public String getDeviceAddress() {

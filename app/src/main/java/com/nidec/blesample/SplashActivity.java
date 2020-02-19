@@ -14,8 +14,10 @@ import android.os.Handler;
 
 public class SplashActivity extends AppCompatActivity {
 
+    // =======================ADD THESE TWO VARIABLES TO SPLASH SCREEN========================
     Handler mHandler;
     private static final int PERMISSION_REQUEST_COARSE_LOCATION = 1;
+    // ======================
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -25,10 +27,8 @@ public class SplashActivity extends AppCompatActivity {
 
         // ==============DO THIS ON THE SPLASH SCREEN, AFTER ANIMATIONS=======================
         mHandler = new Handler();
-
-        // If using SDK >=23, do a runtime request for coarse location
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                && this.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        // Do a runtime request for coarse location
+        if (this.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             final AlertDialog.Builder builder = new AlertDialog.Builder(this);
             builder.setTitle("This app uses BLE which requires location permissions");
             //builder.setMessage("Sample message here");
@@ -40,11 +40,11 @@ public class SplashActivity extends AppCompatActivity {
                 }
             });
             builder.show();
-        } else {
-            // Start main activity
-            Intent intent = new Intent(getApplicationContext(), MainActivity.class);
-            startActivity(intent);
         }
+
+        // Start main activity
+        Intent intent = new Intent(getApplicationContext(), MainActivity.class);
+        startActivity(intent);
         // ==============DO THIS ON THE SPLASH SCREEN, AFTER ANIMATIONS=======================
 
     }
