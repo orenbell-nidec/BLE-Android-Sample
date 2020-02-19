@@ -18,10 +18,8 @@ import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Binder;
-import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
-import android.os.Looper;
 import android.util.Log;
 
 import java.util.List;
@@ -32,8 +30,8 @@ public class BluetoothLeService extends Service {
     private final static String TAG = BluetoothLeService.class.getSimpleName();
     public final static int REQUEST_ENABLE_BT = 1;
     public static UUID MLDP_PRIVATE_SERVICE = UUID.fromString("49535343-fe7d-4ae5-8fa9-9fafd205e455");
-    public static UUID MLDP_WRITE_CHAR = UUID.fromString("49535343-8841-43f4-a8d4-ecbe34729bb3");
-    public static UUID MLDP_READ_CHAR = UUID.fromString("49535343-1e4d-4bd9-ba61-23c647249616");
+    public static UUID MLDP_READ_CHAR = UUID.fromString("49535343-8841-43f4-a8d4-ecbe34729bb3");
+    public static UUID MLDP_WRITE_CHAR = UUID.fromString("49535343-1e4d-4bd9-ba61-23c647249616");
     public static UUID MLDP_CHAR_CONFIG = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     public int connectionState;
 
@@ -133,11 +131,11 @@ public class BluetoothLeService extends Service {
             if (status != BluetoothGatt.GATT_SUCCESS) return;
 
             // Set up all UUIDs
-            BluetoothGattCharacteristic characteristic_data = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_WRITE_CHAR);
-            gatt.setCharacteristicNotification(characteristic_data, true);
+            BluetoothGattCharacteristic char_read = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_READ_CHAR);
+            gatt.setCharacteristicNotification(char_read, true);
 
-            BluetoothGattCharacteristic characteristic_control = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_READ_CHAR);
-            gatt.setCharacteristicNotification(characteristic_control, true);
+            BluetoothGattCharacteristic char_write = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_WRITE_CHAR);
+            gatt.setCharacteristicNotification(char_write, true);
         }
 
         @Override
@@ -168,7 +166,7 @@ public class BluetoothLeService extends Service {
 
         @Override
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
-            BluetoothGattCharacteristic characteristic = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_WRITE_CHAR);
+            BluetoothGattCharacteristic characteristic = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_READ_CHAR);
 
             characteristic.setValue(new byte[] {1, 1});
             gatt.writeCharacteristic(characteristic);
@@ -307,7 +305,7 @@ public class BluetoothLeService extends Service {
     public void sendData(byte[] data) {
         try {
             BluetoothGattService service = gatt.getService(MLDP_PRIVATE_SERVICE);
-            BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_READ_CHAR);
+            BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_WRITE_CHAR);
             characteristic.setValue(data);
             gatt.writeCharacteristic(characteristic);
         } catch (Exception err) {
@@ -323,6 +321,19 @@ public class BluetoothLeService extends Service {
         }
 
         BluetoothGattService service = gatt.getService(MLDP_PRIVATE_SERVICE);
+
+        for(BluetoothGattCharacteristic characteristic : service.getCharacteristics()) {
+            gatt.readCharacteristic(characteristic);
+            byte[] value = characteristic.getValue();
+            String str;
+            if (value == null) {
+                str = "NULL";
+            } else {
+                str = bytesToHexString(value).toString();
+            }
+            Log.d("char_value", characteristic.getUuid() + ": " + str);
+        }
+
         BluetoothGattCharacteristic characteristic = service.getCharacteristic(MLDP_READ_CHAR);
         gatt.readCharacteristic(characteristic);
 
