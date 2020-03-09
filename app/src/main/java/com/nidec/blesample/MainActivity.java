@@ -3,13 +3,16 @@ package com.nidec.blesample;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.bluetooth.BluetoothAdapter;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -36,6 +39,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        registerReceiver(gattUpdateReceiver, bleServiceIntentFilter());
+    }
+
+        @Override
     protected void onStop() {
         super.onStop();
 
@@ -63,6 +72,8 @@ public class MainActivity extends AppCompatActivity {
         // NOTE: Stop and unbind the BLE service when activity stops???
         mBluetoothLeService.stopScan();
         this.unbindService(mServiceConnection);
+
+        unregisterReceiver(gattUpdateReceiver);
     }
 
     public void performScan(View view) {
@@ -94,12 +105,38 @@ public class MainActivity extends AppCompatActivity {
     };
 
     public void sendData(View view) {
-        mBluetoothLeService.sendData(new byte[]{0x02, 0x03, 0x00, 0x05, 0x00, 0x01, (byte)0x94, (byte)0x38});
+        EditText editText = findViewById(R.id.editText);
+        String[] hexstring = editText.getText().toString().split(" ");
+
+        byte[] data = new byte[hexstring.length];
+        int i = 0;
+        for (String s : hexstring) {
+            data[i++] = (byte) ((Character.digit(s.charAt(0), 16) << 4)
+                    + Character.digit(s.charAt(1), 16));
+        }
+
+        mBluetoothLeService.sendData(data);
     }
 
-    public void readData(View view) {
-        byte[] bytes = mBluetoothLeService.readData();
-        char[] data = BluetoothLeService.bytesToHexString(bytes);
-        t_data.setText(data, 0, data.length);
+    private static IntentFilter bleServiceIntentFilter() {
+        final IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(BluetoothLeService.ACTION_BLE_REQ_ENABLE_BT);
+        intentFilter.addAction(BluetoothLeService.ACTION_BLE_CONNECTED);
+        intentFilter.addAction(BluetoothLeService.ACTION_BLE_DISCONNECTED);
+        intentFilter.addAction(BluetoothLeService.ACTION_BLE_DATA_RECEIVED);
+        return intentFilter;
     }
+
+    private final BroadcastReceiver gattUpdateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            final String action = intent.getAction();
+
+            if (BluetoothLeService.ACTION_BLE_DATA_RECEIVED.equals(action)) {
+                char[] data = BluetoothLeService.bytesToHexString(intent.getByteArrayExtra(BluetoothLeService.INTENT_EXTRA_SERVICE_DATA));
+
+                t_data.setText(data, 0, data.length);
+            }
+        }
+    };
 }
