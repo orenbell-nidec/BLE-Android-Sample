@@ -94,7 +94,7 @@ public class MainActivity extends AppCompatActivity {
     };
 
     public void sendData(View view) {
-        mBluetoothLeService.sendData(new byte[]{0x02, 0x03, 0x00, 0x05, 0x00, 0x01, (byte)0x94, 0x38});
+        mBluetoothLeService.sendData(new byte[]{0x02, 0x03, 0x00, 0x05, 0x00, 0x01, (byte)0x94, (byte)0x38});
     }
 
     public void readData(View view) {

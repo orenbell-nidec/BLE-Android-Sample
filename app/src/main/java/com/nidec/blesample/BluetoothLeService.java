@@ -22,18 +22,34 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.util.Log;
 
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 import java.util.UUID;
 
 public class BluetoothLeService extends Service {
 
     private final static String TAG = BluetoothLeService.class.getSimpleName();
     public final static int REQUEST_ENABLE_BT = 1;
+
+    public static final String INTENT_EXTRA_SERVICE_ADDRESS = "BLE_SERVICE_DEVICE_ADDRESS";
+    public static final String INTENT_EXTRA_SERVICE_NAME = "BLE_SERVICE_DEVICE_NAME";
+    public static final String INTENT_EXTRA_SERVICE_DATA = "BLE_SERVICE_DATA";
+
+    public final static String ACTION_BLE_REQ_ENABLE_BT = "com.microchip.mldpterminal3.ACTION_BLE_REQ_ENABLE_BT";
+    public final static String ACTION_BLE_SCAN_RESULT = "com.microchip.mldpterminal3.ACTION_BLE_SCAN_RESULT";
+    public final static String ACTION_BLE_CONNECTED = "com.microchip.mldpterminal3.ACTION_BLE_CONNECTED";
+    public final static String ACTION_BLE_DISCONNECTED = "com.microchip.mldpterminal3.ACTION_BLE_DISCONNECTED";
+    public final static String ACTION_BLE_DATA_RECEIVED = "com.microchip.mldpterminal3.ACTION_BLE_DATA_RECEIVED";
+
     public static UUID MLDP_PRIVATE_SERVICE = UUID.fromString("49535343-fe7d-4ae5-8fa9-9fafd205e455");
-    public static UUID MLDP_READ_CHAR = UUID.fromString("49535343-8841-43f4-a8d4-ecbe34729bb3");
-    public static UUID MLDP_WRITE_CHAR = UUID.fromString("49535343-1e4d-4bd9-ba61-23c647249616");
-    public static UUID MLDP_CHAR_CONFIG = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
+    public static UUID MLDP_WRITE_CHAR = UUID.fromString("49535343-8841-43f4-a8d4-ecbe34729bb3");
+    public static UUID MLDP_READ_CHAR = UUID.fromString("49535343-1e4d-4bd9-ba61-23c647249616");
+    public static UUID MLDP_NOTIFICATION_DESCRIPTOR = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     public int connectionState;
+
+    private final Queue<BluetoothGattDescriptor> descriptorWriteQueue = new LinkedList<BluetoothGattDescriptor>();
+    private final Queue<BluetoothGattCharacteristic> characteristicWriteQueue = new LinkedList<BluetoothGattCharacteristic>();
 
     private BluetoothManager bluetoothManager;
     private BluetoothAdapter bluetoothAdapter;
@@ -133,6 +149,10 @@ public class BluetoothLeService extends Service {
             // Set up all UUIDs
             BluetoothGattCharacteristic char_read = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_READ_CHAR);
             gatt.setCharacteristicNotification(char_read, true);
+            BluetoothGattDescriptor descriptor = char_read.getDescriptor(MLDP_NOTIFICATION_DESCRIPTOR); //Get the descriptor that enables notification on the server
+            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE); //Set the value of the descriptor to enable notification
+            descriptorWriteQueue.add(descriptor);                           //put the descriptor into the write queue
+            gatt.writeDescriptor(descriptor);                 //Write the descriptor
 
             BluetoothGattCharacteristic char_write = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_WRITE_CHAR);
             gatt.setCharacteristicNotification(char_write, true);
@@ -147,16 +167,35 @@ public class BluetoothLeService extends Service {
 
         @Override
         public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-            super.onCharacteristicWrite(gatt, characteristic, status);
-
-            // TODO:
+            try {
+                if (status != BluetoothGatt.GATT_SUCCESS) {                                             //See if the write was successful
+                    Log.w(TAG, "Error writing GATT characteristic with status: " + status);
+                }
+                characteristicWriteQueue.remove();                                                      //Pop the item that we just finishing writing
+                if(characteristicWriteQueue.size() > 0) {                                               //See if there is more to write
+                    gatt.writeCharacteristic(characteristicWriteQueue.element());              //Write characteristic
+                }
+            }
+            catch (Exception e) {
+                Log.e(TAG, "Oops, exception caught in " + e.getStackTrace()[0].getMethodName() + ": " + e.getMessage());
+            }
         }
 
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-            super.onCharacteristicChanged(gatt, characteristic);
-
-            Log.d(TAG, "Value is: " + bytesToHexString(characteristic.getValue()));
+            try {
+                if (MLDP_READ_CHAR.equals(characteristic.getUuid())) {                     //See if it is the MLDP data characteristic
+                    //String dataValue = characteristic.getStringValue(0);                                //Get the data in string format
+                    byte[] dataValue = characteristic.getValue();                                     //Example of getting data in a byte array
+                    Log.d(TAG, "New notification or indication");
+                    final Intent intent = new Intent(ACTION_BLE_DATA_RECEIVED);                         //Create the intent to announce the new data
+                    intent.putExtra(INTENT_EXTRA_SERVICE_DATA, dataValue);                              //Add the data to the intent
+                    sendBroadcast(intent);                                                              //Broadcast the intent
+                }
+            }
+            catch (Exception e) {
+                Log.e(TAG, "Oops, exception caught in " + e.getStackTrace()[0].getMethodName() + ": " + e.getMessage());
+            }
         }
 
         @Override
@@ -166,10 +205,22 @@ public class BluetoothLeService extends Service {
 
         @Override
         public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
-            BluetoothGattCharacteristic characteristic = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_READ_CHAR);
-
-            characteristic.setValue(new byte[] {1, 1});
-            gatt.writeCharacteristic(characteristic);
+            try {
+                if (status != BluetoothGatt.GATT_SUCCESS) {
+                    Log.w(TAG, "Error writing GATT descriptor with status: " + status);
+                }
+                descriptorWriteQueue.remove();                                                          //Pop the item that we just finishing writing
+                if(descriptorWriteQueue.size() > 0) {                                                   //See if there is more to write
+                    gatt.writeDescriptor(descriptorWriteQueue.element());                      //Write descriptor
+                }
+            }
+            catch (Exception e) {
+                Log.e(TAG, "Oops, exception caught in " + e.getStackTrace()[0].getMethodName() + ": " + e.getMessage());
+            }
+//            BluetoothGattCharacteristic characteristic = gatt.getService(MLDP_PRIVATE_SERVICE).getCharacteristic(MLDP_READ_CHAR);
+//
+//            characteristic.setValue(new byte[] {1, 1});
+//            gatt.writeCharacteristic(characteristic);
         }
 
         @Override
