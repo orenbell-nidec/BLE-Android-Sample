@@ -125,10 +125,14 @@ public class BluetoothLeService extends Service {
             }
 
             if (newState == BluetoothProfile.STATE_CONNECTED) {
+                final Intent intent = new Intent(ACTION_BLE_CONNECTED);
+                sendBroadcast(intent);
                 Log.i(TAG, "onConnectionStateChange CONNECTED");
                 connectionState = BluetoothProfile.STATE_CONNECTED;
                 gatt.discoverServices();
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                final Intent intent = new Intent(ACTION_BLE_DISCONNECTED);
+                sendBroadcast(intent);
                 Log.i(TAG, "onConnectionStateChange DISCONNECTED");
                 connectionState = BluetoothProfile.STATE_DISCONNECTED;
             } else if (newState == BluetoothProfile.STATE_DISCONNECTING) {
@@ -297,6 +301,10 @@ public class BluetoothLeService extends Service {
                     if (bluetoothAdapter.isEnabled()) {
                         leScanner.stopScan(scanCallback);
                     }
+
+                    // TODO: Do I need a separate event for failed scans?
+                    final Intent intent = new Intent(ACTION_BLE_DISCONNECTED);
+                    sendBroadcast(intent);
                 }
             }, SCAN_PERIOD);
             mScanning = true;

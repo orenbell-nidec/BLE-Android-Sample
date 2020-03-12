@@ -137,6 +137,14 @@ public class MainActivity extends AppCompatActivity {
 
                 t_data.setText(data, 0, data.length);
             }
+
+            if (BluetoothLeService.ACTION_BLE_CONNECTED.equals(action)) {
+                t_connected.setText("Connected");
+            }
+
+            if (BluetoothLeService.ACTION_BLE_DISCONNECTED.equals(action)) {
+                t_connected.setText("Not connected");
+            }
         }
     };
 }
